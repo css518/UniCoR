@@ -5,8 +5,8 @@ The data and the source code are available in the repository .
 ```
 ├── dataset
 │   ├── XCE
-│   ├── ...(Emprorical)
-├── checkpoint Trained Model Checkpoint Based UniXcoder
+│   ├── ...(Empirical)
+├── checkpoint
 ├── script
 ├── README.md
 ```
