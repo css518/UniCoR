@@ -7,7 +7,7 @@ CUDA_VISIBLE_DEVICES=0
 model_path='./checkpoint'
 model_name='UniCoR'
 
-output=./result-check
+output=./result-empirical
 cache=${output}/cache
 outputs=${output}/result
 csv_name=${output}/model.csv
