@@ -1,4 +1,5 @@
 #!/bin/bash
+export PYTHONPATH=.
 code_length=256
 nl_length=128
 moco_k=3200  #1024
