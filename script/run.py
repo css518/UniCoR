@@ -263,7 +263,7 @@ class MyDataset(Dataset):
         for cache_file,file_part in zip([cache_file1, cache_file2], [file_name[0], file_name[1]]):
             if not os.path.exists(cache_file):
                 data, save = [], []
-                data = load_json('./dataset/train/{}_with_nl_ready.jsonl'.format(args.dataset, file_part))
+                data = load_json('./dataset/Train/{}_with_nl_ready.jsonl'.format(args.dataset, file_part))
                 for js in tqdm(data):
                     save.append(convert_examples_to_features(js,tokenizer,args))
                 save = [item for item in save if item is not None]

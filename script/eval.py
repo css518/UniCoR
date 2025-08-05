@@ -32,7 +32,7 @@ import torch
 import json
 import numpy as np
 from tqdm import tqdm
-from model.model import Model_test as Model
+from model import Model_test as Model
 from torch.nn import CrossEntropyLoss, MSELoss
 from torch.utils.data import DataLoader, Dataset, SequentialSampler, RandomSampler,TensorDataset
 from transformers import (WEIGHTS_NAME, get_linear_schedule_with_warmup,
