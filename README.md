@@ -1,11 +1,25 @@
 # UniCoR
 The data and the source code of UniCoR, Modality Collaboration for Robust Cross-Language Hybrid Code Retrieval, are available in the repository.
 
+## Dependencies
+- Linux Machine
+- CUDA == 12.8
+- Python == 3.13.2
+- Torch == 2.7.1
+
+For specific information on other third-party libraries, please refer to `requirements.txt`. please run the following command to install them:
+
+```bash
+conda create -n unicor python=3.13.2
+conda activate unicor
+pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu118
+pip install -r requirements.txt
+```
 ## Structure
 ```
 ├── dataset
 ├   ├── Train
-│   ├── XCE
+│   ├── XCodeEval
 │   ├── ...(Empirical)
 ├── checkpoint
 ├── script
@@ -13,10 +27,10 @@ The data and the source code of UniCoR, Modality Collaboration for Robust Cross-
 ├── requirements.txt
 ```
 
-## Data
-UniCoR is designed for evaluating Cross-Language Hybrid Code Retrieve. It contains selected instances from CodeJamData, AtCoder, XLCoST, CodeSearchNet and XCodeEval. In this paper, the first four datasets are used as Empirical Benchmarks for phenomenon analysis, while the last dataset contains more programming languages and a larger data volume, making it more comprehensive for verifying the true performance of models.
+### Dataset
+UniCoR is designed for evaluating Cross-Language Hybrid Code Retrieve. It contains selected instances from CodeJamData, AtCoder, XLCoST, CodeSearchNet and XCodeEval. In this paper, the first four datasets are used as Empirical Benchmarks for phenomenon analysis, while the last dataset(XCodeEval) contains more programming languages and a larger data volume, making it more comprehensive for verifying the true performance of models.
 
-**Data Statistics:**
+**evaluation data statistics:**
 |dataset|Languages|DatasetSize|Problem|CodeTokens|NLTokens|
 |----|----|----|----|----|----|
 |CodeJamData | 2 | 402 | 21 | 764 | 75 |
@@ -25,21 +39,30 @@ UniCoR is designed for evaluating Cross-Language Hybrid Code Retrieve. It contai
 |CodeSearchNet | 2 | 3148 | 324 | 708 | 60 |
 |XCodeEval | 11 | 20148 | 6574 | 274 | 69 |
 
-**Data Files:**
+**evaluation data files:**
 All instances in UniCoR are in `dataset`, where `dataset/XCE` contains all XCodeEval instances and other subdirectories contains all empirical instances. In each repo，data is categorised by programming language into different files.
 
 Each instance has fields such as `Query`, `Code`, `Url`, and `Index`. `Query` and `Code` correspond to the natural language query and code implementation of the instance, respectively. Identical `Url` indicate that the code functions are consistent.
 
-## Installation
-- Linux Machine
-- CUDA == 12.8
-- Python == 3.13.2
-- Torch == 2.7.1
+### Parser
+This folder comes from the [GraphCodeBert](https://github.com/microsoft/CodeBERT/tree/master/GraphCodeBERT), which is used to parse data flow graphs.
 
-For specific information on other third-party libraries, please refer to `requirements.txt`.
+If the built file "parser/my-languages.so" doesn't work for you, please rebuild as the following command:
+
+```bash
+cd parser
+bash build.sh
+cd ..
+```
+
+### Checkpoint
+We provide a Checkpoint based on UniXcoder to facilitate rapid model verification in `checkpoint`. 
+This includes weight files, word segmentation models, and parameter files
+
+
 
 ## Quick Start
-We provide a Checkpoint based on UniXcoder to facilitate rapid model verification in `checkpoint`. If you wish to retrain the model, please follow the script below:
+If you wish to retrain the model, please follow the script below:
 
 ```bash
 bash script/train.sh

@@ -30,7 +30,7 @@ do
             do
                 CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} python script/eval.py \
                     --cache_dir ${cache} \
-                    --output_dir ${outputs}\
+                    --output_dir ${outputs} \
                     --model_name_or_path ${model_path}  \
                     --tokenizer_name ${model_path} \
                     --dataset ${dataset} \

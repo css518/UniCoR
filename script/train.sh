@@ -19,7 +19,7 @@ function fine-tune-remix () {
     output_dir=./saved_models/fine_tune-unixcoder-${dataset}-${nl_length}-${code_length}/
     mkdir -p $output_dir
     echo ${output_dir}
-    CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} python run.py   \
+    CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} python train.py   \
         --dataset ${dataset} \
         --save_steps  ${save_steps} \
         --moco_m ${moco_m} --moco_t ${moco_t}  \

@@ -23,3 +23,15 @@ dataset/Train/val.jsonl filter=lfs diff=lfs merge=lfs -text
 dataset/Train/java_with_nl_ready.jsonl filter=lfs diff=lfs merge=lfs -text
 dataset/Train/python_with_nl_ready.jsonl filter=lfs diff=lfs merge=lfs -text
 dataset/Train/ruby_with_nl_ready.jsonl filter=lfs diff=lfs merge=lfs -text
+dataset/XCodeEval/*.jsonl filter=lfs diff=lfs merge=lfs -text
+dataset/XCodeEval/C\#.jsonl filter=lfs diff=lfs merge=lfs -text
+dataset/XCodeEval/C++.jsonl filter=lfs diff=lfs merge=lfs -text
+dataset/XCodeEval/PHP.jsonl filter=lfs diff=lfs merge=lfs -text
+dataset/XCodeEval/Python.jsonl filter=lfs diff=lfs merge=lfs -text
+dataset/XCodeEval/Scala.jsonl filter=lfs diff=lfs merge=lfs -text
+dataset/XCodeEval/C.jsonl filter=lfs diff=lfs merge=lfs -text
+dataset/XCodeEval/Go.jsonl filter=lfs diff=lfs merge=lfs -text
+dataset/XCodeEval/Java.jsonl filter=lfs diff=lfs merge=lfs -text
+dataset/XCodeEval/Javascript.jsonl filter=lfs diff=lfs merge=lfs -text
+dataset/XCodeEval/Ruby.jsonl filter=lfs diff=lfs merge=lfs -text
+dataset/XCodeEval/Rust.jsonl filter=lfs diff=lfs merge=lfs -text

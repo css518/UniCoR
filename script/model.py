@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Optional, Tuple, List, Dict, Any, Union
 from prettytable import PrettyTable
 from torch.nn.modules.activation import Tanh
 from torch.autograd import Function
@@ -9,20 +10,16 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class ReverseLayerF(Function):
-    @staticmethod
-    def forward(ctx, x, alpha):
-        ctx.alpha = alpha
-
-        return x.view_as(x)  
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        output = grad_output.neg() * ctx.alpha
-
-        return output, None
-
-def whitening_torch_final(embeddings):
+def whitening_torch_final(embeddings: torch.Tensor) -> torch.Tensor:
+    """Apply whitening transformation to the input embeddings.
+    Whitening normalizes the embeddings by removing correlation and scaling to unit variance.
+    
+    Args:
+        embeddings: Input tensor of shape [batch_size, embedding_dim]
+        
+    Returns:
+        torch.Tensor: Whitened embeddings of the same shape as input
+    """
     mu = torch.mean(embeddings, dim=0, keepdim=True)
     cov = torch.mm((embeddings - mu).t(), embeddings - mu)
     u, s, vt = torch.svd(cov)
@@ -30,7 +27,17 @@ def whitening_torch_final(embeddings):
     embeddings = torch.mm(embeddings - mu, W)
     return embeddings
 
-def sigmas(model_name):
+def sigmas(model_name: str) -> List[float]:
+    """Get pre-defined sigma values for different model architectures.
+    
+    These sigma values are used for the RBF kernel in MMD loss calculations.
+    
+    Args:
+        model_name: Name of the model architecture
+        
+    Returns:
+        List[float]: List of sigma values specific to the model
+    """
     if 'unixcoder' in model_name.lower():
         return [0.5966, 1.1932, 2.3864]
     elif 'cocosoda' in model_name.lower():
@@ -44,14 +51,20 @@ def sigmas(model_name):
     else:
         logger.info('Bad Model Name')
 
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters())
-
 class BaseModel(nn.Module): 
+    """Base class for all models providing common functionality.
+    
+    This class extends nn.Module and provides methods for parameter inspection.
+    """
     def __init__(self, ):
         super().__init__()
         
-    def model_parameters(self):
+    def model_parameters(self) -> PrettyTable:
+        """Generate a formatted table of model parameters.
+        
+        Returns:
+            PrettyTable: A table containing layer names, output shapes, and parameter counts
+        """
         table = PrettyTable()
         table.field_names = ["Layer Name", "Output Shape", "Param #"]
         table.align["Layer Name"] = "l"
@@ -62,9 +75,19 @@ class BaseModel(nn.Module):
                 table.add_row([name, str(list(parameters.shape)), parameters.numel()])
         return table
 
-class Model_test(BaseModel):   
-    def __init__(self, args):
-        super(Model_test, self).__init__()
+class Model_Eval(BaseModel):   
+    """Model class for evaluation tasks.
+    
+    This class extends BaseModel and provides functionality for evaluating
+    code representation models on various tasks.
+    """
+    def __init__(self, args: Any):
+        """Initialize the evaluation model.
+        
+        Args:
+            args: Configuration arguments containing model settings
+        """
+        super(Model_Eval, self).__init__()
 
         self.cls = args.cls
         self.model_name = args.model.lower()
@@ -85,7 +108,22 @@ class Model_test(BaseModel):
         if 'CodeBert' in args.model or 'ZC3' in args.model:
             self.cls = True
       
-    def forward(self, inputs=None, attn_mask=None, position_idx=None): 
+    def forward(self, inputs: Optional[torch.Tensor] = None, 
+                 attn_mask: Optional[torch.Tensor] = None, 
+                 position_idx: Optional[torch.Tensor] = None) -> torch.Tensor: 
+        """Forward pass to compute embeddings for input sequences.
+        
+        Depending on configuration, computes either [CLS] token embeddings 
+        or average pooling over token embeddings.
+        
+        Args:
+            inputs: Input token ids tensor of shape [batch_size, seq_length]
+            attn_mask: Attention mask tensor of shape [batch_size, seq_length]
+            position_idx: Position indices tensor for graph structures
+            
+        Returns:
+            torch.Tensor: Normalized embeddings of shape [batch_size, embedding_dim]
+        """
         if self.cls:
             if attn_mask is None:
                 attn_mask = inputs.ne(1)
@@ -113,27 +151,6 @@ class Model_test(BaseModel):
                 outputs = (outputs*inputs.ne(1)[:,:,None]).sum(1)/inputs.ne(1).sum(-1)[:,None] 
             return torch.nn.functional.normalize(outputs, p=2, dim=1)
     
-
-class Model(BaseModel):   
-    def __init__(self, encoder, do_whitening):
-        super(Model, self).__init__()
-        self.encoder = encoder
-        self.do_whitening = do_whitening
-
-    def do_repre(self, encoder, data):
-        outputs = encoder(data,attention_mask=data.ne(1))[0] #[bs, seq_len, dim]
-        outputs = (outputs*data.ne(1)[:,:,None]).sum(1)/data.ne(1).sum(-1)[:,None] # None作为ndarray或tensor的索引作用是增加维度，
-        outputs = torch.nn.functional.normalize(outputs, p=2, dim=1)
-        if self.do_whitening:
-            outputs=whitening_torch_final(outputs)
-        return outputs
-      
-    def forward(self, code_inputs=None, nl_inputs=None): 
-        if code_inputs is not None:
-            return self.do_repre(self.encoder, code_inputs)
-        else:
-            return self.do_repre(self.encoder, nl_inputs)
-    
 class MMDLoss(nn.Module):
     """
     Computes the Maximum Mean Discrepancy (MMD) loss between two sets of features.
@@ -158,8 +175,20 @@ class MMDLoss(nn.Module):
                                           For simplicity, this implementation will use a simpler default if not specified.
         **kwargs: Additional arguments for specific kernels (e.g., `degree`, `coef0` for 'poly').
     """
-    def __init__(self, kernel_type='rbf', kernel_mul=2.0, kernel_num=5,
-                 sigmas=None, fix_sigma=None, base_sigma_heuristic=None, **kwargs):
+    def __init__(self, kernel_type: str = 'rbf', kernel_mul: float = 2.0, kernel_num: int = 5,
+                 sigmas: Optional[List[float]] = None, fix_sigma: Optional[float] = None, 
+                 base_sigma_heuristic: Optional[str] = None, **kwargs: Dict[str, Any]):
+        """Initialize the MMD loss module.
+        
+        Args:
+            kernel_type: Type of kernel. 'rbf' (default) or 'poly'.
+            kernel_mul: Factor to create multiple sigmas for RBF kernel.
+            kernel_num: Number of RBF kernels to use (each with a different sigma).
+            sigmas: Explicitly define a list of sigmas for RBF kernels.
+            fix_sigma: Use a single fixed sigma for the RBF kernel.
+            base_sigma_heuristic: Heuristic to determine a base sigma if not fixed.
+            **kwargs: Additional arguments for specific kernels.
+        """
         super(MMDLoss, self).__init__()
         self.kernel_type = kernel_type.lower()
         self.kernel_mul = kernel_mul
@@ -178,28 +207,59 @@ class MMDLoss(nn.Module):
         self.base_sigma_heuristic = base_sigma_heuristic # For potential future use of median heuristic
         self.kernel_args = kwargs
 
-    def _rbf_kernel_gram_matrix(self, X, Y, sigma):
+    def _rbf_kernel_gram_matrix(self, X: torch.Tensor, Y: torch.Tensor, sigma: float) -> torch.Tensor:
         """
         Computes the RBF Gram matrix between X and Y.
         K_ij = exp(- ||X_i - Y_j||^2 / (2 * sigma^2))
+        
+        Args:
+            X: First set of feature vectors of shape [m, d]
+            Y: Second set of feature vectors of shape [n, d]
+            sigma: Kernel width parameter
+            
+        Returns:
+            torch.Tensor: Gram matrix of shape [m, n]
         """
         # torch.cdist computes pairwise p-norm distances. p=2 for Euclidean.
         # Resulting shape: (X.size(0), Y.size(0))
         dists_sq = torch.cdist(X, Y, p=2).pow(2)
         return torch.exp(-dists_sq / (2 * sigma**2))
 
-    def _polynomial_kernel_gram_matrix(self, X, Y, degree, gamma, coef0):
+    def _polynomial_kernel_gram_matrix(self, X: torch.Tensor, Y: torch.Tensor, 
+                                       degree: int, gamma: Optional[float], 
+                                       coef0: float) -> torch.Tensor:
         """
         Computes the Polynomial Gram matrix.
         K_ij = (gamma * <X_i, Y_j> + coef0)^degree
+        
+        Args:
+            X: First set of feature vectors of shape [m, d]
+            Y: Second set of feature vectors of shape [n, d]
+            degree: Degree of the polynomial kernel
+            gamma: Kernel coefficient (if None, 1/d is used)
+            coef0: Independent term in the kernel
+            
+        Returns:
+            torch.Tensor: Gram matrix of shape [m, n]
         """
         if gamma is None: # Default gamma if not provided
             gamma = 1.0 / X.size(1) # 1/feature_dim
         return (gamma * (X @ Y.t()) + coef0).pow(degree)
 
-    def _calculate_mmd2_unbiased(self, K_XX, K_YY, K_XY, m, n):
+    def _calculate_mmd2_unbiased(self, K_XX: torch.Tensor, K_YY: torch.Tensor, 
+                                K_XY: torch.Tensor, m: int, n: int) -> torch.Tensor:
         """
         Calculates MMD^2 using the unbiased estimator.
+        
+        Args:
+            K_XX: Kernel matrix for samples from distribution X
+            K_YY: Kernel matrix for samples from distribution Y
+            K_XY: Cross kernel matrix between X and Y samples
+            m: Number of samples from distribution X
+            n: Number of samples from distribution Y
+            
+        Returns:
+            torch.Tensor: Unbiased MMD^2 estimate
         """
         # Term 1: E[k(X, X')]
         if m > 1:
@@ -228,8 +288,16 @@ class MMDLoss(nn.Module):
         mmd2 = term1 + term2 + term3
         return mmd2
 
-    def _get_rbf_sigmas(self, X, Y):
-        """ Determine sigmas for RBF kernel if not pre-defined. """
+    def _get_rbf_sigmas(self, X: torch.Tensor, Y: torch.Tensor) -> List[float]:
+        """Determine sigmas for RBF kernel if not pre-defined.
+        
+        Args:
+            X: First set of feature vectors
+            Y: Second set of feature vectors
+            
+        Returns:
+            List[float]: List of sigma values to use in RBF kernels
+        """
         if self._sigmas_list: # Already defined by user (fix_sigma or sigmas list)
             return self._sigmas_list
 
@@ -315,7 +383,18 @@ class MMDLoss(nn.Module):
         return torch.relu(mmd2_final)
         
 class UniCoR(BaseModel):
-    def __init__(self, base_encoder, args):
+    """UniCoR (Unified Contrastive Representation) model for code representation learning.
+    
+    This model extends BaseModel and implements contrastive learning between code and natural language,
+    with support for multiple loss functions and data augmentation techniques.
+    """
+    def __init__(self, base_encoder: nn.Module, args: Any):
+        """Initialize the UniCoR model.
+        
+        Args:
+            base_encoder: Base transformer encoder model
+            args: Configuration arguments containing model settings
+        """
         super(UniCoR, self).__init__()
 
         self.K = args.moco_k
@@ -373,10 +452,11 @@ class UniCoR(BaseModel):
         self.register_buffer("masked_nl_queue_ptr", torch.zeros(1, dtype=torch.long))
 
     @torch.no_grad()
-    def _momentum_update_key_encoder(self):
-        """
-        Momentum update of the key encoder
-        % key encoder的Momentum update
+    def _momentum_update_key_encoder(self) -> None:
+        """Update the key encoder parameters using momentum.
+        
+        This method performs a momentum update of the key encoder parameters
+        based on the query encoder parameters, which helps stabilize training.
         """
         for param_q, param_k in zip(self.code_encoder_q.parameters(), self.code_encoder_k.parameters()):
             param_k.data = param_k.data * self.m + param_q.data * (1. - self.m)
@@ -389,7 +469,13 @@ class UniCoR(BaseModel):
                 param_k.data = param_k.data * self.m + param_q.data * (1. - self.m)
 
     @torch.no_grad()
-    def _dequeue_and_enqueue(self, keys, option='code'):
+    def _dequeue_and_enqueue(self, keys: torch.Tensor, option: str = 'code') -> None:
+        """Update the feature queues by removing old entries and adding new ones.
+        
+        Args:
+            keys: Batch of feature vectors to enqueue
+            option: Type of queue to update ('code', 'masked_code', 'nl', or 'masked_nl')
+        """
         # gather keys before updating queue
         # keys = concat_all_gather(keys)
         batch_size = keys.shape[0]
@@ -447,7 +533,25 @@ class UniCoR(BaseModel):
 
             self.masked_nl_queue_ptr[0] = masked_nl_ptr
 
-    def do_repre(self, encoder, data, mask=None, pe=None, iscode=False):
+    def do_repre(self, encoder: nn.Module, data: torch.Tensor, 
+                 mask: Optional[torch.Tensor] = None, 
+                 pe: Optional[torch.Tensor] = None, 
+                 iscode: bool = False) -> torch.Tensor:
+        """Compute normalized representations from the encoder.
+        
+        Depending on the input type and configuration, this method computes
+        feature embeddings and applies normalization or whitening.
+        
+        Args:
+            encoder: Model encoder to use for representation extraction
+            data: Input tensor of token ids or embeddings
+            mask: Attention mask tensor
+            pe: Position encoding tensor
+            iscode: Whether the input is code (affects processing)
+            
+        Returns:
+            torch.Tensor: Normalized feature embeddings
+        """
         if iscode and mask is not None:
             nodes_mask=pe.eq(0)
             token_mask=pe.ge(2)        
@@ -465,7 +569,21 @@ class UniCoR(BaseModel):
             outputs = whitening_torch_final(outputs)
         return outputs
 
-    def do_contrasive_loss(self, query, pos, negative):
+    def do_contrasive_loss(self, query: torch.Tensor, pos: torch.Tensor, 
+                           negative: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Compute contrastive loss for the given query and key representations.
+        
+        This method calculates the contrastive loss by computing similarities between
+        query vectors, positive keys, and negative keys.
+        
+        Args:
+            query: Query feature vectors of shape [batch_size, feature_dim]
+            pos: Positive key vectors of shape [batch_size, feature_dim]
+            negative: Negative key vectors of shape [feature_dim, queue_size]
+            
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: Logits tensor and corresponding labels tensor
+        """
         logits_pos = torch.einsum('nc,bc->nb', [query, pos])
         # negative logits: NxK
         logits_neg = torch.einsum('nc,ck->nk', [query, negative])
@@ -475,14 +593,40 @@ class UniCoR(BaseModel):
         label = torch.arange(logits.size(0), device=logits.device)
         return logits, label
 
-    def forward(self, code1_q_r=None, code1_k_r=None, code2_q_r=None, code2_k_r=None, nl1_q_r=None, nl1_k_r=None, nl2_q_r=None, nl2_k_r=None,
-                code1_mask=None, code1_pe=None, code2_mask=None, code2_pe=None):
-        """
-        Input:
-            im_q: a batch of query images
-            im_k: a batch of key images
-        Output:
-            logits, targets
+    def forward(self, code1_q_r: Optional[torch.Tensor] = None, 
+                code1_k_r: Optional[torch.Tensor] = None, 
+                code2_q_r: Optional[torch.Tensor] = None, 
+                code2_k_r: Optional[torch.Tensor] = None, 
+                nl1_q_r: Optional[torch.Tensor] = None, 
+                nl1_k_r: Optional[torch.Tensor] = None, 
+                nl2_q_r: Optional[torch.Tensor] = None, 
+                nl2_k_r: Optional[torch.Tensor] = None,
+                code1_mask: Optional[torch.Tensor] = None, 
+                code1_pe: Optional[torch.Tensor] = None, 
+                code2_mask: Optional[torch.Tensor] = None, 
+                code2_pe: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
+        """Forward of the UniCoR model.
+        
+        This method computes various loss terms for contrastive learning between
+        code and natural language representations.
+        
+        Args:
+            code1_q_r: Code 1 query token ids
+            code1_k_r: Code 1 key token ids
+            code2_q_r: Code 2 query token ids
+            code2_k_r: Code 2 key token ids
+            nl1_q_r: Natural language 1 query token ids
+            nl1_k_r: Natural language 1 key token ids
+            nl2_q_r: Natural language 2 query token ids
+            nl2_k_r: Natural language 2 key token ids
+            code1_mask: Code 1 attention mask
+            code1_pe: Code 1 position encoding
+            code2_mask: Code 2 attention mask
+            code2_pe: Code 2 position encoding
+            
+        Returns:
+            Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]: 
+                Contrastive loss, MMD loss, and KL divergence loss
         """
         code1_q = self.do_repre(self.code_encoder_q, code1_q_r, code1_mask, code1_pe, iscode=True) # compute query features for source code1
         code2_q = self.do_repre(self.code_encoder_q, code2_q_r, code2_mask, code2_pe, iscode=True)
@@ -514,7 +658,7 @@ class UniCoR(BaseModel):
         else:
             kl_loss = None
 
-
+        #Normal Loss: Raw pair -> Code vs NL
         code2nl_logits11, code2nl_label11 = self.do_contrasive_loss(code1_q, nl1_q, self.nl_queue.clone().detach())# code1 vs nl1
         code2nl_logits22, code2nl_label22 = self.do_contrasive_loss(code2_q, nl2_q, self.nl_queue.clone().detach())## code2 vs nl2
         
@@ -524,39 +668,46 @@ class UniCoR(BaseModel):
         if self.do_aug_loss:
             code2maskednl_logits11, code2maskednl_label11 = self.do_contrasive_loss(code1_q, nl1_k, self.masked_nl_queue.clone().detach())## code1 vs masked nl1
             code2maskednl_logits22, code2maskednl_label22 = self.do_contrasive_loss(code2_q, nl2_k, self.masked_nl_queue.clone().detach())## code2 vs masked nl2
-
             nl2maskedcode_logits11, nl2maskedcode_label11 = self.do_contrasive_loss(nl1_q, code1_k, self.masked_code_queue.clone().detach())
             nl2maskedcode_logits22, nl2maskedcode_label22 = self.do_contrasive_loss(nl2_q, code2_k, self.masked_code_queue.clone().detach()) ## nl2 vs masked code2
 
             inter_code2nl_logits = torch.cat((code2nl_logits11, code2maskednl_logits11, code2nl_logits22 ,code2maskednl_logits22), dim=0)
             inter_code2nl_labels = torch.cat((code2nl_label11, code2maskednl_label11, code2nl_label22 ,code2maskednl_label22), dim=0)
-            
             inter_nl2code_logits = torch.cat((nl2code_logits11, nl2maskedcode_logits11 ,nl2code_logits22, nl2maskedcode_logits22), dim=0)
             inter_nl2code_labels = torch.cat((nl2code_label11, nl2maskedcode_label11 ,nl2code_label22, nl2maskedcode_label22), dim=0)
 
         else:
             inter_code2nl_logits = torch.cat((code2nl_logits11, code2nl_logits22), dim=0)
             inter_code2nl_labels = torch.cat((code2nl_label11, code2nl_label22), dim=0)
-            
             inter_nl2code_logits = torch.cat((nl2code_logits11 ,nl2code_logits22), dim=0)
             inter_nl2code_labels = torch.cat((nl2code_label11 ,nl2code_label22), dim=0)
 
+        #Inter Loss: different language pair -> Code vs NL
         if self.do_inter_loss:
-            code2nl_logits12, code2nl_label12 = self.do_contrasive_loss(code1_q, nl2_q, self.nl_queue.clone().detach())
-            code2nl_logits21, code2nl_label21 = self.do_contrasive_loss(code2_q, nl1_q, self.nl_queue.clone().detach())
+            code2nl_logits12, code2nl_label12 = self.do_contrasive_loss(code1_q, nl2_q, self.nl_queue.clone().detach())  #code1 vs nl2
+            code2nl_logits21, code2nl_label21 = self.do_contrasive_loss(code2_q, nl1_q, self.nl_queue.clone().detach())  #code2 vs nl1
+            nl2code_logits12, nl2code_label12 = self.do_contrasive_loss(nl1_q, code2_q, self.code_queue.clone().detach()) #nl1 vs code2
+            nl2code_logits21, nl2code_label21 = self.do_contrasive_loss(nl2_q, code1_q, self.code_queue.clone().detach()) #nl2 vs code1
 
-            nl2code_logits12, nl2code_label12 = self.do_contrasive_loss(nl1_q, code2_q, self.code_queue.clone().detach())
-            nl2code_logits21, nl2code_label21 = self.do_contrasive_loss(nl2_q, code1_q, self.code_queue.clone().detach())
+            if self.do_aug_loss:
+                code2maskednl_logits12, code2maskednl_label12 = self.do_contrasive_loss(code1_q, nl2_k, self.masked_nl_queue.clone().detach())## code1 vs masked nl2
+                code2maskednl_logits21, code2maskednl_label21 = self.do_contrasive_loss(code2_q, nl1_k, self.masked_nl_queue.clone().detach())## code2 vs masked nl1
+                nl2maskedcode_logits12, nl2maskedcode_label12 = self.do_contrasive_loss(nl1_q, code2_k, self.masked_code_queue.clone().detach()) ## nl1 vs masked code2
+                nl2maskedcode_logits21, nl2maskedcode_label21 = self.do_contrasive_loss(nl2_q, code1_k, self.masked_code_queue.clone().detach()) ## nl2 vs masked code1
 
-            inter_code2nl_logits = torch.cat((inter_code2nl_logits, code2nl_logits12, code2nl_logits21), dim=0)
-            inter_code2nl_labels = torch.cat((inter_code2nl_labels, code2nl_label12, code2nl_label21), dim=0)
+                inter_code2nl_logits = torch.cat((inter_code2nl_logits, code2nl_logits12, code2nl_logits21, code2maskednl_logits12, code2maskednl_logits21), dim=0)
+                inter_code2nl_labels = torch.cat((inter_code2nl_labels, code2nl_label12, code2nl_label21, code2maskednl_label12, code2maskednl_label21), dim=0)
+                inter_nl2code_logits = torch.cat((inter_nl2code_logits, nl2code_logits12, nl2code_logits21, nl2maskedcode_logits12, nl2maskedcode_logits21), dim=0)
+                inter_nl2code_labels = torch.cat((inter_nl2code_labels, nl2code_label12, nl2code_label21, nl2maskedcode_label12, nl2maskedcode_label21), dim=0)   
 
-            inter_nl2code_logits = torch.cat((inter_nl2code_logits, nl2code_logits12, nl2code_logits21), dim=0)
-            inter_nl2code_labels = torch.cat((inter_nl2code_labels, nl2code_label12, nl2code_label21), dim=0)      
-
+            else:
+                inter_code2nl_logits = torch.cat((inter_code2nl_logits, code2nl_logits12, code2nl_logits21), dim=0)
+                inter_code2nl_labels = torch.cat((inter_code2nl_labels, code2nl_label12, code2nl_label21), dim=0)
+                inter_nl2code_logits = torch.cat((inter_nl2code_logits, nl2code_logits12, nl2code_logits21), dim=0)
+                inter_nl2code_labels = torch.cat((inter_nl2code_labels, nl2code_label12, nl2code_label21), dim=0)      
         
         inner_code_logits, inner_nl_logits = None, None
-
+        #Inner Loss: -> Code vs Code
         if self.do_inner_code_loss:
             if self.do_aug_loss:
                 code2maskedcode_logits11, code2maskedcode_label11 = self.do_contrasive_loss(code1_q, code1_k, self.masked_code_queue.clone().detach())
@@ -572,12 +723,14 @@ class UniCoR(BaseModel):
                 if inner_code_logits is not None:
                     code2maskedcode_logits21, code2maskedcode_label21 = self.do_contrasive_loss(code2_q, code1_k, self.masked_code_queue.clone().detach())
                     code2maskedcode_logits12, code2maskedcode_label12 = self.do_contrasive_loss(code1_q, code2_k, self.masked_code_queue.clone().detach())
+                    
                     inner_code_logits = torch.cat((inner_code_logits, code2code_logits12, code2code_logits21, code2maskedcode_logits21, code2maskedcode_logits12), dim=0)
                     inner_code_labels = torch.cat((inner_code_labels, code2code_label12, code2code_label21, code2maskedcode_label21, code2maskedcode_label12), dim=0)
                 else:
                     inner_code_logits = torch.cat((code2code_logits12, code2code_logits21), dim=0)
                     inner_code_labels = torch.cat((code2code_label12, code2code_label21), dim=0)
         
+        #Inner Loss: -> NL vs NL
         if self.do_inner_nl_loss:
             if self.do_aug_loss:
                 nl2maskednl_logits11, nl2maskednl_label11 = self.do_contrasive_loss(nl1_q, nl1_k, self.masked_nl_queue.clone().detach())
@@ -610,8 +763,6 @@ class UniCoR(BaseModel):
             logits = torch.cat((logits, inner_nl_logits), dim=0)
             lables = torch.cat((lables, inner_nl_labels), dim=0)
 
-        # logits = torch.cat((inter_code2nl_logits, inter_nl2code_logits, inner_code_logits, inner_nl_logits), dim=0)
-        # lables = torch.cat((inter_code2nl_labels, inter_nl2code_labels, inner_code_labels, inner_nl_labels), dim=0)
         loss_cl = self.cl_loss_fn(20*logits, lables)
 
         # dequeue and enqueue

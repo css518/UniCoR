@@ -1,7 +1,8 @@
 """
-clean version of evaluation
+clean version of evaluation under Weight scenario
 """
 import os
+from typing import Optional
 import torch
 from tqdm import tqdm
 import logging
@@ -10,34 +11,46 @@ import argparse
 import pickle
 import json
 
-def save_json_data(save_dir, filename, data):
-    """
-    将数据保存为JSON文件
+def save_json_data(save_dir: str, filename: str, data: Any) -> None:
+    """Save data to a JSON file in the specified directory.
     
     Args:
-        save_dir (str): 保存目录路径
-        filename (str): 文件名
-        data: 要保存的数据(通常是字典或列表)
+        save_dir: Directory path to save the file
+        filename: Name of the output file
+        data: Data to save (usually a dictionary or list)
     """
     os.makedirs(save_dir, exist_ok=True)
         
     file_path = os.path.join(save_dir, filename)
     with open(file_path, 'w', encoding='utf-8') as f:
-        if type(data) == list:
-            if type(data[0]) in [str, list, dict]:
+        if isinstance(data, list):
+            if isinstance(data[0], (str, list, dict)):
                 for item in data:
                     f.write(json.dumps(item))
                     f.write('\n')
-
             else:
                 json.dump(data, f)
-        elif type(data) == dict:
+        elif isinstance(data, dict):
             json.dump(data, f)
         else:
-            raise RuntimeError('Unsupported type: %s' % type(data))
-    print("saved dataset in " + filename)
+            raise RuntimeError(f'Unsupported type: {type(data)}')
+    logger.info(f"saved dataset in {filename}")
 
-def do_metric(prefix, scores, query_uids, key_uids, query_idx=None, key_idx=None, w1=None, w2=None):
+
+def do_metric(prefix: str, scores: np.ndarray, query_uids: np.ndarray, key_uids: np.ndarray, query_idx: Optional[np.ndarray] = None, key_idx: Optional[np.ndarray] = None, w1: Optional[float] = None, w2: Optional[float] = None) -> Dict[str, float]:
+    """Compute evaluation metrics like MAP (Mean Average Precision) and MRR (Mean Reciprocal Rank).
+    Args:
+        prefix: Prefix for metric names in the result dictionary
+        scores: Scores for the query examples
+        query_uids: Unique identifiers for the query examples
+        key_uids: Unique identifiers for the candidate examples
+        query_idx: Optional indices for the query examples
+        key_idx: Optional indices for the candidate examples
+        w1: Optional weight for NL2Code metric
+        w2: Optional weight for Code2Code metric
+    Returns:
+        Dictionary containing MAP and MRR scores with the specified prefix
+    """
     sort_ids=np.argsort(scores, axis=-1, kind='quicksort', order=None)[:,::-1]
 
     MAP, MRR = [], []

@@ -4,40 +4,59 @@ import re
 import pandas as pd
 import argparse
 import numpy as np
+from typing import List, Dict, Any, Tuple, Optional
 
-def load_results(directory):
+
+def load_results(directory: str) -> List[Dict[str, Any]]:
+    """Load JSONL result files from a directory.
+    Args:
+        directory: Path to the directory containing JSONL files
+    Returns:
+        List containing all loaded results
+    """
     results = []
     for filename in os.listdir(directory):
         if filename.endswith('.jsonl'):
             with open(os.path.join(directory, filename), 'r') as f:
                 try:
+                    # Read the first line of each JSONL file and parse it as a JSON object
                     results.append(json.loads(f.readline()))
                 except:
+                    # Skip files that fail to parse
                     continue
     return results
 
-def load_cache(directory, weight=None):
+def load_cache(directory: str, weight: Optional[List[Tuple[float, float, float]]] = None) -> List[Dict[str, Any]]:
+    """Load result files from cache directory and add weight information.
+    Args:
+        directory: Path to the directory containing cache JSONL files
+        weight: List of weights, each element is a tuple containing three weight values
+    Returns:
+        List containing all loaded results with weight information
+    """
     results = []
     for filename in os.listdir(directory):
         if filename.endswith('.jsonl'):
             with open(os.path.join(directory, filename), 'r') as f:
                 for idx, lines in enumerate(f):
-                    results.append({**json.loads(lines), 'weight1':weight[idx][0], 'weight2':weight[idx][1], 'weight3':weight[idx][2]})
+                    # Add weight information to each result
+                    results.append({**json.loads(lines), 
+                                  'weight1': weight[idx][0], 
+                                  'weight2': weight[idx][1], 
+                                  'weight3': weight[idx][2]})
     return results
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", default='./result/result-all-Codebridge', type=str, 
-                        help="nlp")
-    parser.add_argument("--output_dir",default='./result/model_performance-Codebridge.csv', type=str)
+                        help="Path to the directory containing JSONL files")
+    parser.add_argument("--output_dir",default='./result/model_performance-Codebridge.csv', type=str,
+                        help="Path to save result CSV file")
 
-    #print arguments
     args = parser.parse_args()
     data, weight_list, cache = [], [], []
 
-
     raw = load_results(args.path)
-    # print('load data 1')
 
     step_size = 0.05
     for w1 in np.arange(0, 1+step_size,step_size):

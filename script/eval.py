@@ -13,15 +13,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""
-Fine-tuning the library models for language modeling on a text file (GPT, GPT-2, BERT, RoBERTa).
-GPT and GPT-2 are fine-tuned using a causal language modeling (CLM) loss while BERT and RoBERTa are fine-tuned
-using a masked language modeling (MLM) loss.
-"""
+'''
+running the evaluation script to evaluate the model on the test set and obtain MRR and MAP scores.
+'''
+
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
-import sys 
 import argparse
 import logging
 import os
@@ -31,16 +29,16 @@ import random
 import torch
 import json
 import numpy as np
+import time
+from typing import List, Dict, Tuple, Any, Optional, Union
 from tqdm import tqdm
-from model import Model_test as Model
-from torch.nn import CrossEntropyLoss, MSELoss
-from torch.utils.data import DataLoader, Dataset, SequentialSampler, RandomSampler,TensorDataset
-from transformers import (WEIGHTS_NAME, get_linear_schedule_with_warmup,
-                              RobertaConfig, RobertaModel, RobertaTokenizer)
-from torch.optim import AdamW
+from model import Model_Eval as Model
+from torch.utils.data import DataLoader, Dataset, SequentialSampler
 
 logger = logging.getLogger(__name__)
 
+
+# Add special tokens follows UnixCoder.
 ruby_special_token = ['keyword', 'identifier', 'separators', 'simple_symbol', 'constant', 'instance_variable',
  'operator', 'string_content', 'integer', 'escape_sequence', 'comment', 'hash_key_symbol',
   'global_variable', 'heredoc_beginning', 'heredoc_content', 'heredoc_end', 'class_variable',]
@@ -63,7 +61,6 @@ php_special_token =['text', 'php_tag', 'name', 'operator', 'keyword', 'string', 
 python_special_token =['keyword', 'identifier', 'separators', 'operator', '"', 'integer', 
 'comment', 'none', 'escape_sequence']
 
-
 special_token={
     'python':python_special_token,
     'java':java_special_token,
@@ -78,14 +75,23 @@ for key, value in special_token.items():
     all_special_token = list(set(all_special_token ).union(set(value)))
 
 class InputFeatures(object):
-    """A single training/test features for a example."""
+    """A single training/test features for an example.
+    
+    Attributes:
+        code_tokens: Tokenized code
+        code_ids: Token IDs of the code
+        nl_tokens: Tokenized natural language
+        nl_ids: Token IDs of the natural language
+        ids: Combined token IDs
+        url: URL or identifier for the example
+    """
     def __init__(self,
-                 code_tokens,
-                 code_ids,
-                 nl_tokens,
-                 nl_ids,
-                 ids,
-                 url,
+                 code_tokens: List[str],
+                 code_ids: List[int],
+                 nl_tokens: List[str],
+                 nl_ids: List[int],
+                 ids: List[int],
+                 url: str,
 
     ):
         self.code_tokens = code_tokens
@@ -96,20 +102,32 @@ class InputFeatures(object):
         self.url = url
 
 class InputFeatures_gcb(object):
+    """A single training/test features for an example on GraphCodeBert.
+    
+    Attributes:
+        code_tokens: Tokenized code
+        code_ids: Token IDs of the code
+        position_idx: Position indices
+        attn_mask: Attention mask matrix
+        nl_ids: Token IDs of the natural language
+        ids: Combined token IDs
+        index: Index of the example
+        url: URL or identifier for the example
+    """
     def __init__(self,
-                 code_tokens,
-                 code_ids,
-                 position_idx,
-                 attn_mask,                 
-                 nl_ids,
-                 ids,
-                 index,
-                 url,
+                 code_tokens: List[str],
+                 code_ids: List[int],
+                 position_idx: List[int],
+                 attn_mask: np.ndarray,
+                 nl_ids: List[int],
+                 ids: List[int],
+                 index: int,
+                 url: str,
     ):
         self.code_tokens = code_tokens
         self.code_ids = code_ids
         self.position_idx=position_idx
-        self.attn_mask=attn_mask     
+        self.attn_mask=attn_mask
         self.nl_ids = nl_ids
         self.ids = ids
         self.index = index
@@ -142,13 +160,21 @@ for lang in dfg_function:
     
     
 #remove comments, tokenize code and extract dataflow                                        
-def extract_dataflow(code, parser,lang):
-    #remove comments
+def extract_dataflow(code: str, parser: List[Any], lang: str) -> Tuple[List[str], List[Any]]:
+    """Extract dataflow graph from code using parser, this function is used for GraphCodeBert.
+    Args:
+        code: Code string to process
+        parser: Parser and dataflow extraction function
+        lang: Programming language of the code
+    Returns:
+        Tuple containing code tokens and dataflow graph
+    """
+
     try:
-        code=remove_comments_and_docstrings(code,lang)
+        code=remove_comments_and_docstrings(code,lang)     #remove comments
     except:
         pass    
-    #obtain dataflow
+
     if lang=="php":
         code="<?php"+code+"?>"    
     try:
@@ -180,36 +206,42 @@ def extract_dataflow(code, parser,lang):
         dfg=[]
     return code_tokens,dfg
 
-def save_json_data(save_dir, filename, data):
-    """
-    将数据保存为JSON文件
+def save_json_data(save_dir: str, filename: str, data: Any) -> None:
+    """Save data to a JSON file in the specified directory.
     
     Args:
-        save_dir (str): 保存目录路径
-        filename (str): 文件名
-        data: 要保存的数据(通常是字典或列表)
+        save_dir: Directory path to save the file
+        filename: Name of the output file
+        data: Data to save (usually a dictionary or list)
     """
     os.makedirs(save_dir, exist_ok=True)
         
     file_path = os.path.join(save_dir, filename)
     with open(file_path, 'w', encoding='utf-8') as f:
-        if type(data) == list:
-            if type(data[0]) in [str, list,dict]:
+        if isinstance(data, list):
+            if isinstance(data[0], (str, list, dict)):
                 for item in data:
                     f.write(json.dumps(item))
                     f.write('\n')
-
             else:
                 json.dump(data, f)
-        elif type(data) == dict:
+        elif isinstance(data, dict):
             json.dump(data, f)
         else:
-            raise RuntimeError('Unsupported type: %s' % type(data))
-    logger.info("saved dataset in " + filename)
+            raise RuntimeError(f'Unsupported type: {type(data)}')
+    logger.info(f"saved dataset in {filename}")
 
         
-def convert_examples_to_features(js, tokenizer, args, start):
-    """convert examples to token ids"""
+def convert_examples_to_features(js: Dict[str, Any], tokenizer: Any, args: Any, start: List[str]) -> InputFeatures:
+    """Convert example to input features with tokenized code and natural language.
+    Args:
+        js: Dictionary containing code and query data
+        tokenizer: Tokenizer for converting text to token IDs
+        args: Arguments containing configuration parameters like sequence lengths
+        start: List of starting tokens (typically including CLS token)
+    Returns:
+        InputFeatures object containing tokenized code, natural language, and combined IDs
+    """
     code =  ' '.join(js['func'].split()) if "func" in js else ' '.join(js['code'].split())
     code_tokens = tokenizer.tokenize(code)
     code_tokens_f = start + code_tokens[:args.code_length-1-len(start)] + [tokenizer.sep_token]
@@ -231,8 +263,15 @@ def convert_examples_to_features(js, tokenizer, args, start):
 
     return InputFeatures(code, code_ids, nl_tokens, nl_ids, ids ,js['label'] if "label" in js else js["url"].split('-')[0])
 
-def convert_examples_to_features_bge(js, tokenizer, args):
-    """convert examples to token ids"""
+def convert_examples_to_features_bge(js: Dict[str, Any], tokenizer: Any, args: Any) -> InputFeatures:
+    """Convert example to input features with tokenized code and natural language for BGE.
+    Args:
+        js: Dictionary containing code and query data
+        tokenizer: Tokenizer for converting text to token IDs
+        args: Arguments containing configuration parameters like sequence lengths
+    Returns:
+        InputFeatures object containing tokenized code, natural language, and combined IDs
+    """
     code =  ' '.join(js['func'].split()) if "func" in js else ' '.join(js['code'].split())
     code_tokens = tokenizer.tokenize(code)[:args.code_length]
     code_ids = tokenizer.convert_tokens_to_ids(code_tokens)
@@ -255,7 +294,18 @@ def convert_examples_to_features_bge(js, tokenizer, args):
     except:
         logging.info(js)
 
-def convert_examples_to_features_gcb(js, tokenizer, args, lang):
+def convert_examples_to_features_gcb(js: Dict[str, Any], tokenizer: Any, args: Any, lang: str) -> InputFeatures_gcb:
+    """Convert example to input features for the GraphCodeBert.
+    
+    Args:
+        js: Dictionary containing code and query data
+        tokenizer: Tokenizer for converting text to token IDs
+        args: Arguments containing configuration parameters
+        lang: Programming language of the code
+        
+    Returns:
+        InputFeatures_gcb object containing tokenized code, position indices, attention mask, and other features
+    """
     #code
     parser=parsers[lang]
     #extract data flow
@@ -323,8 +373,19 @@ def convert_examples_to_features_gcb(js, tokenizer, args, lang):
     return InputFeatures_gcb(code,code_ids,position_idx,attn_mask,comment_ids,ids,js["index"], js['label'] if "label" in js else js["url"].split('-')[0])
 
 class TextDataset(Dataset):
-    def __init__(self, tokenizer, args, file_path=None):
-        self.examples = []
+    """Dataset class for text data containing code and natural language examples.
+    Attributes:
+        examples: List of InputFeatures objects containing tokenized code and natural language
+        lang: Programming language of the code examples
+    """
+    def __init__(self, tokenizer: Any, args: Any, file_path: Optional[str] = None):
+        """Initialize the TextDataset with data from the specified file.
+        Args:
+            tokenizer: Tokenizer for converting text to token IDs
+            args: Arguments containing configuration parameters
+            file_path: Path to the data file
+        """
+        self.examples: List[Union[InputFeatures, InputFeatures_gcb]] = []
         self.lang = re.split(r'[/.]', file_path)[-2]
 
         if args.model.endswith('F'):
@@ -336,7 +397,7 @@ class TextDataset(Dataset):
 
         if os.path.exists(cache_file):
             logger.info(f' Loading dataset from {cache_file} ... ')
-            self.examples=pickle.load(open(cache_file,'rb'))
+            self.examples = pickle.load(open(cache_file, 'rb'))
         else:
             logger.info(f' Dealing dataset to {cache_file} ... ')
             data = []
@@ -350,7 +411,7 @@ class TextDataset(Dataset):
                         if 'code_tokens' in js:
                             js['code'] = " ".join(js['code_tokens'])
                         data.append(js)
-                elif "codebase"in file_path or "code_idx_map" in file_path:
+                elif "codebase" in file_path or "code_idx_map" in file_path:
                     js = json.load(f)
                     for key in js:
                         temp = {}
@@ -364,32 +425,49 @@ class TextDataset(Dataset):
                         data.append(js) 
 
             for js in tqdm(data):
-                if name.lower() in ['']: #graphcodebert
-                    self.examples.append(convert_examples_to_features_gcb(js,tokenizer,args, self.lang))
+                if name.lower() in ['']:  # graphcodebert
+                    self.examples.append(convert_examples_to_features_gcb(js, tokenizer, args, self.lang))
                 elif name.lower() in ['zc3', 'codebert', 'graphcodebert']:
-                    self.examples.append(convert_examples_to_features(js,tokenizer,args,[tokenizer.cls_token]))
-                elif name.lower() in ['bge','roberta']:
+                    self.examples.append(convert_examples_to_features(js, tokenizer, args, [tokenizer.cls_token]))
+                elif name.lower() in ['bge', 'roberta']:
                     self.examples.append(convert_examples_to_features_bge(js, tokenizer, args))
                 elif name.lower() in ['cocosoda', 'unixcoder'] or 'My' in name:
-                    self.examples.append(convert_examples_to_features(js,tokenizer,args,[tokenizer.cls_token,"<encoder-only>",tokenizer.sep_token]))
+                    self.examples.append(convert_examples_to_features(js, tokenizer, args, [tokenizer.cls_token, "<encoder-only>", tokenizer.sep_token]))
                 else:
                     logger.info('wrong Model Data')
             
-            pickle.dump(self.examples,open(cache_file,'wb'))
-                                        
+            pickle.dump(self.examples, open(cache_file, 'wb'))
+                                 
         
-    def __len__(self):
+    def __len__(self) -> int:
+        """Return the number of examples in the dataset.
+        Returns:
+            Number of examples in the dataset
+        """
         return len(self.examples)
 
-    def __getitem__(self, _idx):
+    def __getitem__(self, _idx: int) -> Tuple[torch.Tensor, ...]:
+        """Get the example at the specified index.
+        Args:
+            _idx: Index of the example to retrieve
+        Returns:
+            Tuple containing tensors for code IDs, attention mask (if available),
+            position indices (if available), natural language IDs, code tokens,
+            combined IDs, and URL
+        """
         if hasattr(self.examples[_idx], "attn_mask"):
-            # print(len(self.examples[_idx].code_ids), self.examples[_idx].attn_mask.shape, len(self.examples[_idx].position_idx), len(self.examples[_idx].nl_ids), len(self.examples[_idx].ids))
-            return (torch.tensor(self.examples[_idx].code_ids),torch.tensor(self.examples[_idx].attn_mask), torch.tensor(self.examples[_idx].position_idx),torch.tensor(self.examples[_idx].nl_ids), self.examples[_idx].code_tokens, torch.tensor(self.examples[_idx].ids), self.examples[_idx].url)
+            # For GraphCodeBERT
+            return (torch.tensor(self.examples[_idx].code_ids), torch.tensor(self.examples[_idx].attn_mask), torch.tensor(self.examples[_idx].position_idx), torch.tensor(self.examples[_idx].nl_ids), self.examples[_idx].code_tokens, torch.tensor(self.examples[_idx].ids), self.examples[_idx].url)
         else:
-            return (torch.tensor(self.examples[_idx].code_ids),torch.tensor(self.examples[_idx].nl_ids), self.examples[_idx].code_tokens, torch.tensor(self.examples[_idx].ids), self.examples[_idx].url)
+            return (torch.tensor(self.examples[_idx].code_ids), torch.tensor(self.examples[_idx].nl_ids), self.examples[_idx].code_tokens, torch.tensor(self.examples[_idx].ids), self.examples[_idx].url)
             
 
-def set_seed(seed=42):
+def set_seed(seed: int = 42) -> None:
+    """Set random seed for reproducibility across random number generators.
+    
+    Args:
+        seed: Random seed value
+    """
     random.seed(seed)
     os.environ['PYHTONHASHSEED'] = str(seed)
     np.random.seed(seed)
@@ -398,7 +476,16 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = True
 
 
-def do_evaluate(args, model, mode, dataloader):
+def do_evaluate(args: Any, model: torch.nn.Module, mode: str, dataloader: torch.utils.data.DataLoader):
+    """Evaluate the model on the given data and generate embeddings.
+    Args:
+        args: Arguments containing configuration parameters
+        model: Model to evaluate
+        mode: Evaluation mode ('nlp', 'code', 'remix', 'code+code', 'nlp+code')
+        dataloader: DataLoader providing batches of data
+    Returns:
+        Tuple containing embeddings, URLs, and indices
+    """
     model.eval()
 
     model_eval = model.module if hasattr(model,'module') else model
@@ -439,7 +526,19 @@ def do_evaluate(args, model, mode, dataloader):
     idxs = np.concatenate(idxs,0)
     return vecs, urls, idxs
 
-def do_metric(prefix, query_vecs, key_vecs, query_uids, key_uids, query_idx=None, key_idx=None):
+def do_metric(prefix: str, query_vecs: np.ndarray, key_vecs: np.ndarray, query_uids: np.ndarray, key_uids: np.ndarray, query_idx: Optional[np.ndarray] = None, key_idx: Optional[np.ndarray] = None) -> Dict[str, float]:
+    """Compute evaluation metrics like MAP (Mean Average Precision) and MRR (Mean Reciprocal Rank).
+    Args:
+        prefix: Prefix for metric names in the result dictionary
+        query_vecs: Embeddings for the query examples
+        key_vecs: Embeddings for the candidate examples
+        query_uids: Unique identifiers for the query examples
+        key_uids: Unique identifiers for the candidate examples
+        query_idx: Optional indices for the query examples
+        key_idx: Optional indices for the candidate examples
+    Returns:
+        Dictionary containing MAP and MRR scores with the specified prefix
+    """
     scores=np.matmul(query_vecs,key_vecs.T)
     sort_ids=np.argsort(scores, axis=-1, kind='quicksort', order=None)[:,::-1]
 
@@ -471,7 +570,15 @@ def do_metric(prefix, query_vecs, key_vecs, query_uids, key_uids, query_idx=None
     }
     return result
 
-def evaluate(args, model, tokenizer):
+def evaluate(args: Any, model: torch.nn.Module, tokenizer: Any) -> Dict[str, float]:
+    """Evaluate the model on the given query and candidate data and compute metrics.
+    Args:
+        args: Arguments containing configuration parameters
+        model: Model to evaluate
+        tokenizer: Tokenizer used for preprocessing
+    Returns:
+        Dictionary containing evaluation metrics like MAP and MRR
+    """
     modes = args.mode.split('2')
 
     query_dataset = TextDataset(tokenizer, args, args.query_file)
@@ -493,7 +600,7 @@ def evaluate(args, model, tokenizer):
     logger.info("  Num codes = %d", len(code_dataset))
     logger.info("  Batch size = %d", args.eval_batch_size)
 
-
+    start_time = time.perf_counter()
     if os.path.exists(query_cache):
         query_vecs, query_urls, query_idxs = pickle.load(open(query_cache,'rb'))
         # pass
@@ -507,18 +614,31 @@ def evaluate(args, model, tokenizer):
     else:
         key_vecs, key_urls, key_idxs = do_evaluate(args, model, modes[1], code_dataloader)
         pickle.dump((key_vecs, key_urls, key_idxs), open(code_cache,'wb'))
+    embedding_time = time.perf_counter() - start_time
 
     # return None
-    return do_metric('{}-{}-{}-{}2{}'.format(args.model, args.dataset, args.mode, re.split(r'[/.]', args.query_file)[-2], re.split(r'[/.]', args.candidate_file)[-2]), \
+    result = do_metric('{}-{}-{}-{}2{}'.format(args.model, args.dataset, args.mode, re.split(r'[/.]', args.query_file)[-2], re.split(r'[/.]', args.candidate_file)[-2]), \
                      query_vecs=query_vecs, key_vecs=key_vecs, query_uids=query_urls, key_uids=key_urls, query_idx=query_idxs, key_idx=key_idxs)
+    total_time = time.perf_counter() - start_time
+    logging.info(('Eval Finish, Total %.6f second, Embedding Time %.6f second', total_time, embedding_time))
+    return result
 
-def json_pretty_dump(obj, filename):
+def json_pretty_dump(obj: Any, filename: str) -> None:
+    """Dump JSON object to file with pretty formatting.
+    Args:
+        obj: JSON-serializable object to dump
+        filename: Path to output file
+    """
     obj = vars(obj)
     with open(filename, "w") as fw:
         json.dump(obj, fw, sort_keys=True, indent=4,
                   separators=(",", ": "), ensure_ascii=False)        
                         
 def main():
+    """Main function for running the evaluation script.
+    Parses command line arguments, sets up logging, initializes the model,
+    tokenizer, and runs the evaluation process.
+    """
     parser = argparse.ArgumentParser()
 
     ## Required parameters
@@ -578,9 +698,7 @@ def main():
     parser.add_argument('--model', type=str, default='UniCoR',
                         help="random seed for initialization")
     
-    #print arguments
     args = parser.parse_args()
-    # json_pretty_dump(args, os.path.join(args.output_dir, "params.json"))
 
     os.makedirs(args.cache_dir, exist_ok=True)
     os.makedirs(args.output_dir, exist_ok=True)

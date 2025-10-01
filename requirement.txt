@@ -18,3 +18,5 @@ torchaudio=2.7.1+cu128=pypi_0
 torchvision=0.22.1+cu128=pypi_0
 tqdm=4.67.1=py313h7040dfc_0
 transformers=4.51.3=py313h06a4308_0
+rank-bm25=0.2.2=pypi_0
+
