@@ -20,7 +20,7 @@ bash script/train.sh
 To evaluate the performance of a trained model on a dataset, run the `eval***.py` and `search_best.py` script with the appropriate command-line arguments, just like `inference.sh`:
 ```
 bash script/inference_empirical.sh  # for empirical benchmarks 
-bash script/inference_XCE.sh  # for XCE benchmarks
+bash script/inference_XCodeEval.sh  # for XCodeEval benchmarks
 bash script/inference_rebuttal.sh  # add experiment about BM25 and text-embedding of OpenAI during rebuttal
 ```
 
