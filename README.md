@@ -71,5 +71,5 @@ bash script/train.sh
 Evaluation
 ```bash
    bash script/inference_empirical.sh
-   bash script/inference_XCE.sh
+   bash script/inference_XCodeEval.sh
 ```
