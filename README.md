@@ -1,8 +1,9 @@
 # UniCoR
-The data and the source code of UniCoR, Modality Collaboration for Robust Cross-Language Hybrid Code Retrieval, are available in the repository.
+Here are the Pytorch implementation and data of UniCoR in the ICSE 2026: *Modality Collaboration for Robust Cross-Language Hybrid Code Retrieval*. 
 
 ## Dependencies
-- Linux Machine
+
+- Ubuntu 18.04
 - CUDA == 12.8
 - Python == 3.13.2
 - Torch == 2.7.1
@@ -45,6 +46,7 @@ All instances in UniCoR are in `dataset`, where `dataset/XCE` contains all XCode
 Each instance has fields such as `Query`, `Code`, `Url`, and `Index`. `Query` and `Code` correspond to the natural language query and code implementation of the instance, respectively. Identical `Url` indicate that the code functions are consistent.
 
 ### Parser
+
 This folder comes from the [GraphCodeBert](https://github.com/microsoft/CodeBERT/tree/master/GraphCodeBERT), which is used to parse data flow graphs.
 
 If the built file "parser/my-languages.so" doesn't work for you, please rebuild as the following command:
@@ -65,7 +67,7 @@ This includes weight files, word segmentation models, and parameter files
 If you wish to retrain the model, please follow the script below:
 
 ```bash
-bash script/train.sh
+   bash script/train.sh
 ```
 
 Evaluation
@@ -73,3 +75,6 @@ Evaluation
    bash script/inference_empirical.sh
    bash script/inference_XCodeEval.sh
 ```
+
+You may refer to  [Script Readme](./script/README.md) for more details.
+
