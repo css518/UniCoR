@@ -78,3 +78,21 @@ Evaluation
 
 You may refer to  [Script Readme](./script/README.md) for more details.
 
+## Citation
+
+If you find this repo or our work helpful, please consider citing us:
+```bibtex
+@inproceedings{yang2026unicor,
+   title={UniCoR: Modality Collaboration for Robust Cross-Language Hybrid Code Retrieval},
+   author={Yang Yang and Li Kuang and Jiakun Liu and Zhongxin Liu and Yingjie Xia and David Lo},
+   booktitle = {Proceedings of the 48th International Conference on Software Engineering},
+   year={2026},
+   url = {https://doi.org/10.1145/3744916.3773201},
+   doi = {10.1145/3744916.3773201},
+   location = {Rio de Janeiro, Brazil},
+   series = {ICSE '26}
+}
+```
+
+
+
